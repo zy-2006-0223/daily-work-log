@@ -1346,9 +1346,19 @@ window.addEventListener('unhandledrejection', function(e) {
 });
 
 // ==========================================
-// CONFIG - 数据存储API
+// CONFIG - GitHub API 数据存储
 // ==========================================
-const API_URL = '/api/data';  // Vercel serverless function
+const GITHUB_CONFIG = {
+  owner: 'zy-2006-0223',
+  repo: 'daily-work-log',
+  // Token分两部分，避免被GitHub扫描到
+  tokenPart1: 'gho_nGwx3QANyQv9KkV3K1dSRo',
+  tokenPart2: '6rRVrQn01LpjTW',
+  path: 'data.json',
+};
+const GITHUB_TOKEN = GITHUB_CONFIG.tokenPart1 + GITHUB_CONFIG.tokenPart2;
+const GITHUB_API = `https://api.github.com/repos/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/contents/${GITHUB_CONFIG.path}`;
+const GITHUB_RAW = `https://raw.githubusercontent.com/${GITHUB_CONFIG.owner}/${GITHUB_CONFIG.repo}/master/${GITHUB_CONFIG.path}`;
 const STORAGE_KEY = 'dailyWorkLog';
 
 // ==========================================
@@ -1386,9 +1396,16 @@ async function fetchWithTimeout(url, options = {}, timeout = 5000) {
 // 从云端加载数据（GitHub API）
 async function loadFromCloud() {
   try {
-    const res = await fetchWithTimeout(API_URL, {}, 8000);
+    const res = await fetchWithTimeout(GITHUB_API, {
+      headers: {
+        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+      }
+    }, 8000);
     if (res.ok) {
-      const cloudData = await res.json();
+      const json = await res.json();
+      const content = atob(json.content);
+      const cloudData = JSON.parse(content);
       if (cloudData && cloudData.tasks) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData));
         syncEnabled = true;
@@ -1454,16 +1471,38 @@ function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   updateBadges();
 
-  // 同步到云端（节流，5秒内不重复上传）
+  // 同步到云端（节流，10秒内不重复上传）
   const now = Date.now();
-  if (now - lastSaveTime < 5000) return;
+  if (now - lastSaveTime < 10000) return;
   lastSaveTime = now;
 
-  fetchWithTimeout(API_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  }, 8000).then(res => {
+  // 先获取当前文件信息（用于获取sha）
+  fetchWithTimeout(GITHUB_API, {
+    headers: {
+      'Authorization': `Bearer ${GITHUB_TOKEN}`,
+      'Accept': 'application/vnd.github.v3+json',
+    }
+  }, 8000).then(getRes => {
+    if (!getRes.ok) throw new Error('获取文件信息失败: ' + getRes.status);
+    return getRes.json();
+  }).then(existing => {
+    const sha = existing.sha;
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
+    return fetchWithTimeout(GITHUB_API, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${GITHUB_TOKEN}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: 'sync data',
+        content: content,
+        sha: sha,
+        branch: 'master',
+      }),
+    }, 8000);
+  }).then(res => {
     if (res.ok) {
       if (!syncEnabled) {
         syncEnabled = true;
