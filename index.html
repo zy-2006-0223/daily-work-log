@@ -1346,14 +1346,9 @@ window.addEventListener('unhandledrejection', function(e) {
 });
 
 // ==========================================
-// CONFIG - 在这里配置你的 JSONBin
+// CONFIG - 数据存储API
 // ==========================================
-const JSONBIN_CONFIG = {
-  binId: '6a55a703016c3e19c6fa0dab',
-  masterKey: '$2a$10$2mpetyDc/JQ8B.NAll73c.pUhOK01R0ew3jKvWqAitj6IrIMm.3cu',
-};
-
-const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_CONFIG.binId}`;
+const API_URL = '/api/data';  // Vercel serverless function
 const STORAGE_KEY = 'dailyWorkLog';
 
 // ==========================================
@@ -1388,15 +1383,12 @@ async function fetchWithTimeout(url, options = {}, timeout = 5000) {
   });
 }
 
-// 从JSONBin加载数据（云端 → 本地缓存）
+// 从云端加载数据（GitHub API）
 async function loadFromCloud() {
   try {
-    const res = await fetchWithTimeout(JSONBIN_URL, {
-      headers: { 'X-Master-Key': JSONBIN_CONFIG.masterKey }
-    });
+    const res = await fetchWithTimeout(API_URL, {}, 8000);
     if (res.ok) {
-      const json = await res.json();
-      const cloudData = json.record;
+      const cloudData = await res.json();
       if (cloudData && cloudData.tasks) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData));
         syncEnabled = true;
@@ -1467,12 +1459,9 @@ function saveData() {
   if (now - lastSaveTime < 5000) return;
   lastSaveTime = now;
 
-  fetchWithTimeout(JSONBIN_URL, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Master-Key': JSONBIN_CONFIG.masterKey,
-    },
+  fetchWithTimeout(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   }, 8000).then(res => {
     if (res.ok) {
