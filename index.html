@@ -1404,7 +1404,7 @@ async function loadFromCloud() {
     }, 8000);
     if (res.ok) {
       const json = await res.json();
-      const content = atob(json.content);
+      const content = decodeURIComponent(escape(atob(json.content)));
       const cloudData = JSON.parse(content);
       if (cloudData && cloudData.tasks) {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudData));
@@ -1413,8 +1413,10 @@ async function loadFromCloud() {
         return cloudData;
       }
     }
+    // 文件不存在(404)或其它错误，返回null让上层fallback
+    console.log('云端数据不存在，使用本地缓存');
   } catch (e) {
-    console.log('云端加载失败，使用本地缓存:', e.message);
+    console.log('云端加载失败:', e.message);
   }
   return null;
 }
@@ -1483,6 +1485,8 @@ function saveData() {
       'Accept': 'application/vnd.github.v3+json',
     }
   }, 8000).then(getRes => {
+    // 文件不存在（404）也正常，说明是第一次保存
+    if (getRes.status === 404) return { sha: null };
     if (!getRes.ok) throw new Error('获取文件信息失败: ' + getRes.status);
     return getRes.json();
   }).then(existing => {
@@ -1522,7 +1526,7 @@ function saveData() {
 function showSyncStatus(connected) {
   const el = document.getElementById('syncStatus');
   if (el) {
-    el.textContent = connected ? '☁️ 已同步' : '☁️ 未连接';
+    el.textContent = connected ? '✅ 已同步' : '⚠️ 未同步';
     el.style.color = connected ? 'var(--success)' : 'var(--danger)';
   }
 }
